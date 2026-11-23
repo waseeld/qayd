@@ -45,6 +45,114 @@ class GroqWhisperService {
     String? audioLanguage,
     ProgressCallback? onSendProgress,
   }) async {
+    final result = await _transcribeFile(
+      audioFilePath: audioFilePath,
+      customApiKey: customApiKey,
+      audioLanguage: audioLanguage,
+      onSendProgress: onSendProgress,
+    );
+
+    if (result.text.trim().isEmpty && result.segments.isEmpty) {
+      throw Exception(
+        'No clear speech could be transcribed from this audio. Please try recording closer to the microphone or in a quieter environment.',
+      );
+    }
+    return result;
+  }
+
+  /// Transcribes a long recording split into [chunkPaths], then merges the
+  /// results with offset timestamps. Silent chunks are skipped (not fatal).
+  Future<TranscriptionResult> transcribeAudioChunked({
+    required List<String> chunkPaths,
+    int chunkDurationSec = 600,
+    String? customApiKey,
+    String? audioLanguage,
+    void Function(int completed, int total)? onChunkProgress,
+  }) async {
+    if (chunkPaths.isEmpty) {
+      throw Exception('No audio chunks to transcribe.');
+    }
+
+    final results = <TranscriptionResult>[];
+    final offsets = <double>[];
+    final total = chunkPaths.length;
+
+    for (var i = 0; i < total; i++) {
+      onChunkProgress?.call(i, total);
+      final result = await _transcribeFile(
+        audioFilePath: chunkPaths[i],
+        customApiKey: customApiKey,
+        audioLanguage: audioLanguage,
+      );
+      if (result.text.trim().isNotEmpty || result.segments.isNotEmpty) {
+        results.add(result);
+        offsets.add((i * chunkDurationSec).toDouble());
+      }
+    }
+    onChunkProgress?.call(total, total);
+
+    if (results.isEmpty) {
+      throw Exception(
+        'No clear speech could be transcribed from this audio. Please try recording closer to the microphone or in a quieter environment.',
+      );
+    }
+
+    return mergeChunkResults(results, chunkOffsetsSec: offsets);
+  }
+
+  /// Pure merge of per-chunk transcription results. Each chunk's segments are
+  /// shifted by its offset so timestamps stay contiguous across the lecture.
+  static TranscriptionResult mergeChunkResults(
+    List<TranscriptionResult> results, {
+    List<double>? chunkOffsetsSec,
+    double defaultChunkOffsetSec = 600.0,
+  }) {
+    final allSegments = <TranscriptSegment>[];
+    final textParts = <String>[];
+    var maxEnd = 0.0;
+
+    for (var i = 0; i < results.length; i++) {
+      final result = results[i];
+      final offset = (chunkOffsetsSec != null && i < chunkOffsetsSec.length)
+          ? chunkOffsetsSec[i]
+          : i * defaultChunkOffsetSec;
+
+      for (final segment in result.segments) {
+        allSegments.add(
+          TranscriptSegment(
+            startSec: segment.startSec + offset,
+            endSec: segment.endSec + offset,
+            text: segment.text,
+          ),
+        );
+      }
+
+      final text = result.text.trim();
+      if (text.isNotEmpty) {
+        textParts.add(text);
+      }
+
+      final chunkEnd = offset + result.durationSec;
+      if (chunkEnd > maxEnd) maxEnd = chunkEnd;
+    }
+
+    final fullText = textParts.join(' ');
+    return TranscriptionResult(
+      text: fullText,
+      segments: allSegments,
+      language: _detectLanguage(fullText, null),
+      durationSec: maxEnd,
+    );
+  }
+
+  /// Performs a single Groq Whisper request without the single-file
+  /// empty-speech guard, so chunked transcription can skip silent chunks.
+  Future<TranscriptionResult> _transcribeFile({
+    required String audioFilePath,
+    String? customApiKey,
+    String? audioLanguage,
+    ProgressCallback? onSendProgress,
+  }) async {
     final key = customApiKey ?? _apiKey;
     if (key.trim().isEmpty) {
       throw Exception(
@@ -99,13 +207,7 @@ class GroqWhisperService {
         throw Exception('Received empty response from Groq API');
       }
 
-      final result = parseTranscriptionResponse(data);
-      if (result.text.trim().isEmpty && result.segments.isEmpty) {
-        throw Exception(
-          'No clear speech could be transcribed from this audio. Please try recording closer to the microphone or in a quieter environment.',
-        );
-      }
-      return result;
+      return parseTranscriptionResponse(data);
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
       final data = e.response?.data;

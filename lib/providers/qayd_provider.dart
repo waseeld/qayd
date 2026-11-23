@@ -19,6 +19,7 @@ import '../data/services/gemini_summary_service.dart';
 import '../data/services/audio_recording_service.dart';
 import '../data/services/audio_picker_service.dart';
 import '../data/services/audio_compression_service.dart';
+import '../data/services/audio_splitter_service.dart';
 
 class QaydProvider extends ChangeNotifier {
   final StorageService storageService;
@@ -27,6 +28,7 @@ class QaydProvider extends ChangeNotifier {
   final AudioRecordingService recordingService;
   final AudioPickerService pickerService;
   final AudioCompressionService compressionService;
+  final AudioSplitterService splitterService;
 
   // --- State Variables ---
   List<Qayd> _qayds = [];
@@ -59,7 +61,9 @@ class QaydProvider extends ChangeNotifier {
     required this.recordingService,
     required this.pickerService,
     AudioCompressionService? compressionService,
-  }) : compressionService = compressionService ?? AudioCompressionService() {
+    AudioSplitterService? splitterService,
+  })  : compressionService = compressionService ?? AudioCompressionService(),
+        splitterService = splitterService ?? AudioSplitterService() {
     // Listen to recording timer stream
     recordingService.durationStream.listen((seconds) {
       _recordDurationSeconds = seconds;
@@ -449,6 +453,32 @@ class QaydProvider extends ChangeNotifier {
   // ---------------------------------------------------------------------------
   // The Core AI Pipeline (Record/Import -> Transcribe -> Summarize -> Save)
   // ---------------------------------------------------------------------------
+
+  /// Transcribes [audioPath], splitting long/large audio into Whisper-optimal
+  /// chunks first so Groq never hits its upload or length limits.
+  Future<TranscriptionResult> _transcribeAudio(
+    String audioPath,
+    String? audioLanguage,
+  ) async {
+    if (!await splitterService.needsSplitting(audioPath)) {
+      return whisperService.transcribeAudio(
+        audioFilePath: audioPath,
+        audioLanguage: audioLanguage,
+      );
+    }
+
+    final chunks = await splitterService.splitToWhisperChunks(audioPath);
+    return whisperService.transcribeAudioChunked(
+      chunkPaths: chunks,
+      chunkDurationSec: AudioSplitterService.chunkDurationSec,
+      audioLanguage: audioLanguage,
+      onChunkProgress: (completed, total) {
+        _processingStatusMessage =
+            'Transcribing audio part ${completed + 1} of $total...';
+        notifyListeners();
+      },
+    );
+  }
 
   Future<Qayd> _runAiPipeline({
     required String audioPath,
