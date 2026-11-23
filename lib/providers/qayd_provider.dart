@@ -49,6 +49,9 @@ class QaydProvider extends ChangeNotifier {
   bool _isPaused = false;
   int _recordDurationSeconds = 0;
 
+  // Photos captured during the active recording (linked to elapsed time)
+  List<LecturePhoto> _pendingPhotos = [];
+
   // Language & Theme State (FR7)
   Locale _currentLocale = const Locale('en');
   ThemeMode _themeMode = ThemeMode.system;
@@ -102,6 +105,22 @@ class QaydProvider extends ChangeNotifier {
   bool get isRecording => _isRecording;
   bool get isPaused => _isPaused;
   int get recordDurationSeconds => _recordDurationSeconds;
+
+  List<LecturePhoto> get pendingPhotos => _pendingPhotos;
+
+  /// Appends photos captured in a camera session to the active recording.
+  void addPendingPhotos(List<LecturePhoto> photos) {
+    if (photos.isEmpty) return;
+    _pendingPhotos = [..._pendingPhotos, ...photos];
+    notifyListeners();
+  }
+
+  /// Clears the pending photo buffer (e.g. when a new recording starts).
+  void clearPendingPhotos() {
+    if (_pendingPhotos.isEmpty) return;
+    _pendingPhotos = [];
+    notifyListeners();
+  }
 
   Locale get currentLocale => _currentLocale;
   ThemeMode get themeMode => _themeMode;
@@ -299,6 +318,7 @@ class QaydProvider extends ChangeNotifier {
       _errorQaydId = null;
       _processingProgress = 0.0;
       _processingStatusMessage = '';
+      _pendingPhotos = [];
       await recordingService.startRecording();
       _isRecording = true;
       _isPaused = false;
@@ -332,7 +352,12 @@ class QaydProvider extends ChangeNotifier {
     String? title,
     String summaryLanguage = 'en',
     String? audioLanguage,
+    List<LecturePhoto>? photos,
   }) async {
+    // Capture any in-recording photos before clearing the buffer for the next run.
+    final finalPhotos = List<LecturePhoto>.from(photos ?? _pendingPhotos);
+    _pendingPhotos = [];
+
     // Clear any previously completed activeQayd synchronously so ProcessingScreen
     // does not immediately auto-navigate to the previous lecture while stopRecording() awaits.
     _activeQayd = null;
@@ -364,6 +389,7 @@ class QaydProvider extends ChangeNotifier {
         folderId: _selectedFolderId,
         summaryLanguage: summaryLanguage,
         audioLanguage: audioLanguage,
+        photos: finalPhotos,
       );
     } catch (e) {
       _isRecording = false;
@@ -407,6 +433,7 @@ class QaydProvider extends ChangeNotifier {
     String? title,
     String summaryLanguage = 'ar',
     String? audioLanguage,
+    List<LecturePhoto> photos = const [],
   }) async {
     final finalTitle = title?.trim().isNotEmpty == true
         ? title!.trim()
@@ -427,6 +454,7 @@ class QaydProvider extends ChangeNotifier {
     String? title,
     String summaryLanguage = 'ar',
     String? audioLanguage,
+    List<LecturePhoto> photos = const [],
   }) async {
     try {
       final picked = await pickAudioForImport();
@@ -441,6 +469,7 @@ class QaydProvider extends ChangeNotifier {
         title: title,
         summaryLanguage: summaryLanguage,
         audioLanguage: audioLanguage,
+        photos: finalPhotos,
       );
     } catch (e) {
       _errorMessage = e.toString();
@@ -487,6 +516,7 @@ class QaydProvider extends ChangeNotifier {
     String? folderId,
     String summaryLanguage = 'ar',
     String? audioLanguage,
+    List<LecturePhoto> photos = const [],
   }) async {
     _errorMessage = null;
     _errorQaydId = null;
@@ -501,6 +531,7 @@ class QaydProvider extends ChangeNotifier {
       status: QaydStatus.transcribing,
       folderId: folderId,
       summaryLanguage: summaryLanguage,
+      photos: photos,
     );
     _activeQayd = qayd;
     _processingStatusMessage = 'Transcribing audio with Groq Whisper...';

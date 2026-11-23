@@ -53,6 +53,32 @@ class TranscriptSegment {
   }
 }
 
+/// A photo captured during a live recording, linked to its capture time
+/// so it can be mapped back to the audio timeline (tap-to-seek).
+class LecturePhoto {
+  final String path;
+  final double takenAtSec;
+
+  const LecturePhoto({
+    required this.path,
+    required this.takenAtSec,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'path': path,
+      'takenAtSec': takenAtSec,
+    };
+  }
+
+  factory LecturePhoto.fromMap(Map<String, dynamic> map) {
+    return LecturePhoto(
+      path: map['path'] as String? ?? '',
+      takenAtSec: (map['takenAtSec'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
 /// A key technical term with its definition extracted by Gemini
 class KeyTerm {
   final String term;
@@ -165,6 +191,7 @@ class Qayd {
   final QaydStatus status;
   final String? folderId;
   final String summaryLanguage;
+  final List<LecturePhoto> photos;
 
   const Qayd({
     required this.id,
@@ -179,6 +206,7 @@ class Qayd {
     this.status = QaydStatus.done,
     this.folderId,
     this.summaryLanguage = 'en',
+    this.photos = const [],
   });
 
   /// Creates a copy of this Qayd with updated fields (immutability helper).
@@ -197,6 +225,7 @@ class Qayd {
     String? folderId,
     bool clearFolderId = false,
     String? summaryLanguage,
+    List<LecturePhoto>? photos,
   }) {
     return Qayd(
       id: id ?? this.id,
@@ -211,6 +240,7 @@ class Qayd {
       status: status ?? this.status,
       folderId: clearFolderId ? null : (folderId ?? this.folderId),
       summaryLanguage: summaryLanguage ?? this.summaryLanguage,
+      photos: photos ?? this.photos,
     );
   }
 
@@ -228,6 +258,7 @@ class Qayd {
       'status': status.name,
       'folderId': folderId,
       'summaryLanguage': summaryLanguage,
+      'photos': photos.map((p) => p.toMap()).toList(),
     };
   }
 
@@ -259,6 +290,11 @@ class Qayd {
       ),
       folderId: map['folderId'] as String?,
       summaryLanguage: map['summaryLanguage'] as String? ?? 'en',
+      photos: (map['photos'] as List<dynamic>?)
+              ?.map((e) =>
+                  LecturePhoto.fromMap(Map<String, dynamic>.from(e as Map)))
+              .toList() ??
+          const [],
     );
   }
 }

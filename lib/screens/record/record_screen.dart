@@ -8,8 +8,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../data/models/qayd_model.dart';
 import '../../providers/qayd_provider.dart';
 import '../processing/processing_screen.dart';
+import 'photo_capture_screen.dart';
 
 class RecordScreen extends StatefulWidget {
   const RecordScreen({super.key});
@@ -70,10 +72,23 @@ class _RecordScreenState extends State<RecordScreen> {
       await provider.stopRecordingAndProcess(
         title: title.isNotEmpty ? title : null,
         summaryLanguage: _summaryLanguage,
+        photos: provider.pendingPhotos,
       );
     } catch (_) {
       // Errors are caught and handled inside ProcessingScreen via provider
     }
+  }
+
+  Future<void> _onCapturePhotoPressed() async {
+    final provider = context.read<QaydProvider>();
+    final captured = await Navigator.push<List<LecturePhoto>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PhotoCaptureScreen(),
+      ),
+    );
+    if (captured == null || !mounted) return;
+    provider.addPendingPhotos(captured);
   }
 
   @override
@@ -215,6 +230,25 @@ class _RecordScreenState extends State<RecordScreen> {
                     : (isArabic ? 'جاري التسجيل...' : 'Recording in progress...'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Capture photo of the board/slide, linked to the current time
+              OutlinedButton.icon(
+                onPressed: _onCapturePhotoPressed,
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: Text(
+                  provider.pendingPhotos.isEmpty
+                      ? (isArabic ? 'التقاط صورة' : 'Capture Photo')
+                      : '${isArabic ? 'التقاط صورة' : 'Capture Photo'} (${provider.pendingPhotos.length})',
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                 ),
               ),
 

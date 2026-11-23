@@ -40,7 +40,7 @@ class _DetailScreenState extends State<DetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _audioPlayer = AudioPlayer();
 
     _initAudioPlayer();
@@ -222,6 +222,10 @@ class _DetailScreenState extends State<DetailScreen>
               icon: const Icon(Icons.subtitles),
               text: isArabic ? 'التفريغ النصي' : 'Full Transcript',
             ),
+            Tab(
+              icon: const Icon(Icons.photo_library_outlined),
+              text: isArabic ? 'الصور' : 'Photos',
+            ),
           ],
         ),
       ),
@@ -237,6 +241,7 @@ class _DetailScreenState extends State<DetailScreen>
               children: [
                 _buildSummaryTab(theme, qayd, isArabic),
                 _buildTranscriptTab(theme, qayd, isArabic),
+                _buildPhotosTab(theme, qayd, isArabic),
               ],
             ),
           ),
@@ -926,6 +931,200 @@ class _DetailScreenState extends State<DetailScreen>
         qayd.transcript,
         style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab 3: Captured Photos linked to their recording timestamps (FR-Photos)
+  // ---------------------------------------------------------------------------
+  Widget _buildPhotosTab(ThemeData theme, Qayd qayd, bool isArabic) {
+    if (qayd.photos.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.photo_library_outlined,
+                size: 64,
+                color: theme.colorScheme.outlineVariant,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                isArabic ? 'لا توجد صور لهذه المحاضرة' : 'No photos for this lecture',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isArabic
+                    ? 'التقط صوراً أثناء التسجيل لتظهر هنا مرتبطة بوقت التقاطها'
+                    : 'Capture photos while recording and they will appear here, linked to their capture time.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 200,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: qayd.photos.length,
+      itemBuilder: (context, index) {
+        final photo = qayd.photos[index];
+        return _buildPhotoTile(theme, photo, isArabic);
+      },
+    );
+  }
+
+  Widget _buildPhotoTile(ThemeData theme, LecturePhoto photo, bool isArabic) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _openPhotoViewer(photo, isArabic),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              File(photo.path),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                color: theme.colorScheme.surfaceContainerHighest,
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 8,
+              top: 8,
+              child: InkWell(
+                onTap: _audioAvailable
+                    ? () => _seekToSeconds(photo.takenAtSec)
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _audioAvailable
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_audioAvailable) ...[
+                        Icon(
+                          Icons.play_arrow,
+                          size: 13,
+                          color: theme.colorScheme.onPrimary,
+                        ),
+                        const SizedBox(width: 2),
+                      ],
+                      Text(
+                        _formatTime(photo.takenAtSec),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: _audioAvailable
+                              ? theme.colorScheme.onPrimary
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openPhotoViewer(LecturePhoto photo, bool isArabic) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          insetPadding: EdgeInsets.zero,
+          backgroundColor: Colors.black,
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4,
+                    child: Image.file(
+                      File(photo.path),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white70,
+                          size: 48,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ),
+                Positioned(
+                  bottom: 12,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_audioAvailable)
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _seekToSeconds(photo.takenAtSec);
+                          },
+                          icon:
+                              const Icon(Icons.play_arrow, color: Colors.white),
+                          label: Text(
+                            '${isArabic ? 'تشغيل من' : 'Play from'} ${_formatTime(photo.takenAtSec)}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

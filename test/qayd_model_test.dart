@@ -108,5 +108,32 @@ void main() {
       expect(recovered.id, 'folder-1');
       expect(recovered.name, 'Mobile Development');
     });
+
+    test('LecturePhoto and Qayd.photos serialization with backward compatibility', () {
+      final qayd = Qayd(
+        id: 'qayd-photo',
+        title: 'Photo Lecture',
+        createdAt: DateTime.now(),
+        durationSec: 300,
+        audioPath: '/data/audio/lecture.m4a',
+        photos: const [
+          LecturePhoto(path: '/data/photos/p1.jpg', takenAtSec: 12.0),
+          LecturePhoto(path: '/data/photos/p2.jpg', takenAtSec: 88.5),
+        ],
+      );
+
+      final map = qayd.toMap();
+      final recovered = Qayd.fromMap(map);
+
+      expect(recovered.photos.length, 2);
+      expect(recovered.photos.first.path, '/data/photos/p1.jpg');
+      expect(recovered.photos.first.takenAtSec, 12.0);
+      expect(recovered.photos.last.takenAtSec, 88.5);
+
+      // Legacy Hive maps that omit `photos` default to an empty list
+      final legacyMap = Map<String, dynamic>.from(map)..remove('photos');
+      final legacy = Qayd.fromMap(legacyMap);
+      expect(legacy.photos, isEmpty);
+    });
   });
 }
