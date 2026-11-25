@@ -169,6 +169,19 @@ void main() {
       expect(provider.isDarkMode, false);
     });
 
+    test('saveApiKeys stores and clears both API keys', () async {
+      await provider.saveApiKeys(
+        groqApiKey: '  gsk_test_key  ',
+        geminiApiKey: ' AIza_test_key ',
+      );
+      expect(provider.groqApiKey, 'gsk_test_key');
+      expect(provider.geminiApiKey, 'AIza_test_key');
+
+      await provider.saveApiKeys(groqApiKey: '', geminiApiKey: '');
+      expect(provider.groqApiKey, '');
+      expect(provider.geminiApiKey, '');
+    });
+
     test('Loads and seeds demo data when storage is empty', () async {
       provider.loadInitialData();
       // Allow async seeding to complete

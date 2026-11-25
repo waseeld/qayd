@@ -52,6 +52,10 @@ class QaydProvider extends ChangeNotifier {
   // Photos captured during the active recording (linked to elapsed time)
   List<LecturePhoto> _pendingPhotos = [];
 
+  // User-configured API keys (persisted once via Settings)
+  String? _groqApiKey;
+  String? _geminiApiKey;
+
   // Language & Theme State (FR7)
   Locale _currentLocale = const Locale('en');
   ThemeMode _themeMode = ThemeMode.system;
@@ -122,6 +126,25 @@ class QaydProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The saved Groq API key ('' when none set).
+  String get groqApiKey => _groqApiKey ?? '';
+
+  /// The saved Gemini API key ('' when none set).
+  String get geminiApiKey => _geminiApiKey ?? '';
+
+  /// Effective key to send to Groq: the user-saved key when present, otherwise
+  /// null so the service falls back to its compile-time (--dart-define) default.
+  String? get _effectiveGroqApiKey {
+    final key = _groqApiKey?.trim();
+    return (key != null && key.isNotEmpty) ? key : null;
+  }
+
+  /// Effective key to send to Gemini: user-saved key when present, else null.
+  String? get _effectiveGeminiApiKey {
+    final key = _geminiApiKey?.trim();
+    return (key != null && key.isNotEmpty) ? key : null;
+  }
+
   Locale get currentLocale => _currentLocale;
   ThemeMode get themeMode => _themeMode;
   bool get isDarkMode => _themeMode == ThemeMode.dark;
@@ -149,12 +172,29 @@ class QaydProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Persists the user's API keys once so they never have to re-enter them.
+  /// Empty values clear the corresponding key.
+  Future<void> saveApiKeys({
+    required String groqApiKey,
+    required String geminiApiKey,
+  }) async {
+    _groqApiKey = groqApiKey.trim();
+    _geminiApiKey = geminiApiKey.trim();
+    await storageService.saveApiKeys(
+      groqApiKey: _groqApiKey!,
+      geminiApiKey: _geminiApiKey!,
+    );
+    notifyListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Initialization & Loading (FR6)
   // ---------------------------------------------------------------------------
 
-  /// Loads saved Qayds and folders from local storage
+  /// Loads saved Qayds, folders and user API keys from local storage
   void loadInitialData() {
+    _groqApiKey = storageService.groqApiKey;
+    _geminiApiKey = storageService.geminiApiKey;
     _qayds = storageService.getAllQayds();
     _folders = storageService.getAllFolders();
 
@@ -433,7 +473,6 @@ class QaydProvider extends ChangeNotifier {
     String? title,
     String summaryLanguage = 'ar',
     String? audioLanguage,
-    List<LecturePhoto> photos = const [],
   }) async {
     final finalTitle = title?.trim().isNotEmpty == true
         ? title!.trim()
@@ -454,7 +493,6 @@ class QaydProvider extends ChangeNotifier {
     String? title,
     String summaryLanguage = 'ar',
     String? audioLanguage,
-    List<LecturePhoto> photos = const [],
   }) async {
     try {
       final picked = await pickAudioForImport();
@@ -469,7 +507,6 @@ class QaydProvider extends ChangeNotifier {
         title: title,
         summaryLanguage: summaryLanguage,
         audioLanguage: audioLanguage,
-        photos: finalPhotos,
       );
     } catch (e) {
       _errorMessage = e.toString();
@@ -492,6 +529,7 @@ class QaydProvider extends ChangeNotifier {
     if (!await splitterService.needsSplitting(audioPath)) {
       return whisperService.transcribeAudio(
         audioFilePath: audioPath,
+        customApiKey: _effectiveGroqApiKey,
         audioLanguage: audioLanguage,
       );
     }
@@ -500,6 +538,7 @@ class QaydProvider extends ChangeNotifier {
     return whisperService.transcribeAudioChunked(
       chunkPaths: chunks,
       chunkDurationSec: AudioSplitterService.chunkDurationSec,
+      customApiKey: _effectiveGroqApiKey,
       audioLanguage: audioLanguage,
       onChunkProgress: (completed, total) {
         _processingStatusMessage =
@@ -539,11 +578,9 @@ class QaydProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 2. Transcribe Audio (FR3)
-      final transcriptResult = await whisperService.transcribeAudio(
-        audioFilePath: audioPath,
-        audioLanguage: audioLanguage,
-      );
+      // 2. Transcribe Audio (FR3). Long recordings are split + compressed into
+      //    Whisper-optimal chunks, transcribed separately, then merged.
+      final transcriptResult = await _transcribeAudio(audioPath, audioLanguage);
 
       final finalDuration = durationSec > 0
           ? durationSec
@@ -573,6 +610,7 @@ class QaydProvider extends ChangeNotifier {
           transcript: transcriptResult.text,
           segments: transcriptResult.segments,
           summaryLanguage: summaryLanguage,
+          customApiKey: _effectiveGeminiApiKey,
         );
 
         qayd = qayd.copyWith(
@@ -644,6 +682,7 @@ class QaydProvider extends ChangeNotifier {
         transcript: qayd.transcript,
         segments: qayd.segments,
         summaryLanguage: targetLang,
+        customApiKey: _effectiveGeminiApiKey,
       );
 
       qayd = qayd.copyWith(

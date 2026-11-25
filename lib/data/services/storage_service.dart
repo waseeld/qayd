@@ -17,10 +17,14 @@ class StorageService {
   static const String _foldersBoxName = 'folders_box';
   static const String _metaBoxName = 'meta_box';
   static const String _demoSeededKey = 'demo_seeded';
+  static const String _settingsBoxName = 'settings_box';
+  static const String _groqApiKeyKey = 'groq_api_key';
+  static const String _geminiApiKeyKey = 'gemini_api_key';
 
   late Box<Map> _qaydsBox;
   late Box<Map> _foldersBox;
   late Box<bool> _metaBox;
+  late Box<String> _settingsBox;
   bool _isInitialized = false;
 
   /// Initializes Hive database and opens the necessary boxes
@@ -29,6 +33,7 @@ class StorageService {
     _qaydsBox = await Hive.openBox<Map>(_qaydsBoxName);
     _foldersBox = await Hive.openBox<Map>(_foldersBoxName);
     _metaBox = await Hive.openBox<bool>(_metaBoxName);
+    _settingsBox = await Hive.openBox<String>(_settingsBoxName);
     _isInitialized = true;
   }
 
@@ -42,6 +47,33 @@ class StorageService {
   Future<void> markDemoSeeded() async {
     if (!_isInitialized) return;
     await _metaBox.put(_demoSeededKey, true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // User API Keys (Settings)
+  // ---------------------------------------------------------------------------
+
+  /// The Groq Whisper API key saved by the user, or '' when none is set.
+  String get groqApiKey {
+    if (!_isInitialized) return '';
+    return _settingsBox.get(_groqApiKeyKey) ?? '';
+  }
+
+  /// The Gemini API key saved by the user, or '' when none is set.
+  String get geminiApiKey {
+    if (!_isInitialized) return '';
+    return _settingsBox.get(_geminiApiKeyKey) ?? '';
+  }
+
+  /// Persists both API keys once so the user never has to re-enter them.
+  /// Passing empty strings clears the respective key.
+  Future<void> saveApiKeys({
+    required String groqApiKey,
+    required String geminiApiKey,
+  }) async {
+    if (!_isInitialized) return;
+    await _settingsBox.put(_groqApiKeyKey, groqApiKey.trim());
+    await _settingsBox.put(_geminiApiKeyKey, geminiApiKey.trim());
   }
 
   // ---------------------------------------------------------------------------
@@ -78,18 +110,25 @@ class StorageService {
     return qayds;
   }
 
-  /// Deletes a Qayd and removes its local audio file to prevent orphan files (NFR9)
+  /// Deletes a Qayd and its local audio/photo files to prevent orphan files (NFR9)
   Future<void> deleteQayd(String id) async {
     if (!_isInitialized) return;
     final qayd = getQayd(id);
-    if (qayd != null && qayd.audioPath.isNotEmpty) {
-      try {
-        final file = File(qayd.audioPath);
-        if (await file.exists()) {
-          await file.delete();
+    if (qayd != null) {
+      final pathsToDelete = <String>[];
+      if (qayd.audioPath.isNotEmpty) {
+        pathsToDelete.add(qayd.audioPath);
+      }
+      pathsToDelete.addAll(qayd.photos.map((p) => p.path));
+      for (final path in pathsToDelete) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          debugPrint('Could not delete file ($path): $e');
         }
-      } catch (e) {
-        debugPrint('Could not delete audio file: $e');
       }
     }
     await _qaydsBox.delete(id);

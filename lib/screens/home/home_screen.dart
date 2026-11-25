@@ -16,6 +16,7 @@ import '../../widgets/qayd_actions.dart';
 import '../record/record_screen.dart';
 import '../processing/processing_screen.dart';
 import '../detail/detail_screen.dart';
+import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -273,6 +274,13 @@ class _HomeScreenState extends State<HomeScreen> {
     showCreateFolderDialog(context);
   }
 
+  void _openSettings(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -322,6 +330,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: isArabic ? 'الإعدادات' : 'Settings',
+            onPressed: () => _openSettings(context),
+          ),
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
             onPressed: () {
